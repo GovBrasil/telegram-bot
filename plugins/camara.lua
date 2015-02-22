@@ -9,9 +9,11 @@
 -- This code is released under the terms of the GNU General Public License
 -- version 2 or any later version.
 --
---
--- consulta as pautas na seguinte fonte de dados:
+-- consulta pauta dos orgaos
 -- http://www2.camara.leg.br/transparencia/dados-abertos/dados-abertos-legislativo/webservices/orgaos/obterpauta
+--
+-- consulta lista de orgaos
+-- http://www2.camara.leg.br/transparencia/dados-abertos/dados-abertos-legislativo/webservices/orgaos/obterorgaos
 --
 -- dependencias de execucao, num Debian execute:
 -- apt-get install lua5.2 lua-socket lua-expat
@@ -25,7 +27,7 @@ function obter_pauta(orgao_id)
   return b
 end
 
-function parse_xml(xml)
+function parse_pauta(xml)
   reuniao = {}
   reunioes = {}
   key = nil
@@ -38,7 +40,7 @@ function parse_xml(xml)
       end
     end,
     CharacterData = function(parser, data)
-      if key and not string.isblank(data) then
+      if key and data and not string.isblank(data) then
         reuniao[key] = data
       end
     end,
@@ -65,19 +67,47 @@ function reuniao_to_string(reuniao)
     ..reuniao["local"]
 end
 
+function parse_orgaos(xml)
+  orgaos = {}
+  callbacks = {
+    StartElement = function(parser, name, attributes)
+      if (name == "orgao") then
+        orgaos[attributes["id"]] = attributes
+      end
+    end
+  }
+  p = lxp.new(callbacks)
+  p:parse(xml)
+  p:close()
+  return orgaos
+end
+
+function obter_orgaos()
+  b, c, h = http.request("http://www.camara.gov.br/SitCamaraWS/Orgaos.asmx/ObterOrgaos")
+  return b
+end
+
 function run(msg, matches)
-  xml = obter_pauta(matches[1])
-  reunioes = parse_xml(xml)
+  orgaos_xml = obter_orgaos()
+  orgaos = parse_orgaos(orgaos_xml)
   text = ""
-  for i,reuniao in ipairs(reunioes) do
-    text = text .. reuniao_to_string(reuniao) .. "\n"
+  for id in pairs(orgaos) do
+    orgao = orgaos[id]
+    pauta_xml = obter_pauta(orgao["id"])
+    reunioes = parse_pauta(pauta_xml)
+    if (#reunioes > 0) then
+      text = text .. orgao["sigla"] .. "\n"
+      for i,reuniao in ipairs(reunioes) do
+        text = text .. "* " .. reuniao_to_string(reuniao) .. "\n"
+      end
+    end
   end
   return text
 end
 
 return {
   description = "Consulta fonte de dados abertos da Camara dos Deputados",
-  usage = "!pauta [orgao id]: retorna pautas do orgao informado",
-  patterns = {"^!pauta (.*)$"},
+  usage = "!pauta: Retorna pauta de todos os orgaos",
+  patterns = {"^!pauta$"},
   run = run
 }
