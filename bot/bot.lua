@@ -5,7 +5,7 @@ json = (loadfile "./libs/JSON.lua")()
 serpent = (loadfile "./libs/serpent.lua")()
 require("./bot/utils")
 
-VERSION = '0.8.6'
+VERSION = '0.9.3'
 
 function on_msg_receive (msg)
   vardump(msg)
@@ -36,17 +36,21 @@ end
 function msg_valid(msg)
   -- Dont process outgoing messages
   if msg.out then
+    print("Not valid, msg from us")
     return false
   end
   if msg.date < now then
+    print("Not valid, old msg")
     return false
   end
   if msg.unread == 0 then
+    print("Not valid, readed")
     return false
   end
 end
 
 function do_lex(msg, text)
+  -- Plugins which implements lex.
   for name, desc in pairs(plugins) do
     if (desc.lex ~= nil) then
       result = desc.lex(msg, text)
@@ -64,9 +68,9 @@ function do_action(msg)
   local receiver = get_receiver(msg)
   local text = msg.text
 
-  if msg.text == nil then
+  if text == nil then
     -- Not a text message, make text the same as what tg shows so
-    -- we can match on it. The plugin is resposible for handling
+    -- we can match on it. Maybe a plugin activated my media type.
     if msg.media ~= nil then
       text = '['..msg.media.type..']'
     end
@@ -149,10 +153,13 @@ function create_config( )
   config = {
     enabled_plugins = {
       "9gag",
+      "eur",
       "echo",
+      "btc",
       "get",
       "giphy",
       "google",
+      "gps",
       "help",
       "images",
       "img_google",
@@ -164,6 +171,7 @@ function create_config( )
       "time",
       "version",
       "weather",
+      "xkcd",
       "youtube" },
     sudo_users = {our_id}  
   }
@@ -216,3 +224,4 @@ end
 -- Start and load values
 our_id = 0
 now = os.time()
+math.randomseed(now)
