@@ -9,6 +9,7 @@
 -- This code is released under the terms of the GNU General Public License
 -- version 2 or any later version.
 --
+--
 -- consulta pauta dos orgaos
 -- http://www2.camara.leg.br/transparencia/dados-abertos/dados-abertos-legislativo/webservices/orgaos/obterpauta
 --
@@ -16,15 +17,35 @@
 -- http://www2.camara.leg.br/transparencia/dados-abertos/dados-abertos-legislativo/webservices/orgaos/obterorgaos
 --
 -- dependencias de execucao, num Debian execute:
--- apt-get install lua5.2 lua-socket lua-expat
+-- apt-get install lua5.2 lua-socket lua-expat redis-server lua-redis
+--
+-- este plugin faz cache de requisicoes HTTP em banco Redis por 12 horas
 
 local http = require("socket.http")
 local lxp = require("lxp")
+local redis = require("redis")
+
+local client = redis.connect('127.0.0.1', 6379)
+
+function get_from_cache(cache_key, block)
+  local value = client:get(cache_key)
+  if not value then
+    value = block()
+    client:set(cache_key, value)
+    client:expire(cache_key, 43200) -- 43200 = 12 * 60 * 60 (12 hours)
+  end
+  return value
+end
 
 function obter_pauta(orgao_id)
   today = os.date("%d/%m/%Y")
-  b, c, h = http.request("http://www.camara.gov.br/SitCamaraWS/Orgaos.asmx/ObterPauta?datFim=&IDOrgao="..orgao_id.."&datIni="..today)
-  return b
+  url = "http://www.camara.gov.br/SitCamaraWS/Orgaos.asmx/ObterPauta?datFim=&IDOrgao="..orgao_id.."&datIni="..today
+  cache_key = 'http:request:'..url
+  value = get_from_cache(cache_key, function()
+    b, c, h = http.request(url)
+    return b
+  end)
+  return value
 end
 
 function parse_pauta(xml)
@@ -63,7 +84,7 @@ function reuniao_to_string(reuniao)
     ..reuniao["horario"]
     .." "
     ..reuniao["tituloReuniao"]
-    .." na "
+    .." no(a) "
     ..reuniao["local"]
 end
 
@@ -83,8 +104,13 @@ function parse_orgaos(xml)
 end
 
 function obter_orgaos()
-  b, c, h = http.request("http://www.camara.gov.br/SitCamaraWS/Orgaos.asmx/ObterOrgaos")
-  return b
+  url = "http://www.camara.gov.br/SitCamaraWS/Orgaos.asmx/ObterOrgaos"
+  cache_key = 'http:request:'..url
+  value = get_from_cache(cache_key, function()
+    b, c, h = http.request(url)
+    return b
+  end)
+  return value
 end
 
 function run(msg, matches)
@@ -107,7 +133,7 @@ end
 
 return {
   description = "Consulta fonte de dados abertos da Camara dos Deputados",
-  usage = "!pauta: Retorna pauta de todos os orgaos",
+  usage = "!pauta: Retorna pauta da semana da Camara dos Deputados federais",
   patterns = {"^!pauta$"},
   run = run
 }
